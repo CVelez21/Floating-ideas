@@ -1,0 +1,19 @@
+# ============================
+# requirements.txt
+# Floating Ideas — single-event stack
+# - FastAPI backend + HTML intake
+# - Streamlit optional intake
+# - Pygame showcase wall
+# - WebSocket client/server
+# ============================
+
+fastapi
+uvicorn
+pydantic
+python-multipart
+requests
+pygame
+websockets
+streamlit
+qrcode
+pillow

@@ -1,0 +1,249 @@
+<!-- ============================
+     backend/submit.html
+     Floating Ideas — Mobile Intake with PIN Gate
+     - Gate screen: enter Event PIN first (stored in localStorage)
+     - After PIN, show the idea form (PIN auto-submitted via hidden field)
+     - Backend still validates on /ideas
+     ============================ -->
+
+<!doctype html>
+<html lang="en">
+<head>
+  <!-- Charset + viewport -->
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- Title -->
+  <title>Submit an Idea</title>
+
+  <!-- Minimal, readable styling (no external deps) -->
+  <style>
+    :root {
+      --bg: #0b1224;
+      --card: #121a30;
+      --border: #233052;
+      --text: #e9f0ff;
+      --muted: #a7b0c4;
+      --accent: #5dc4ff;
+      --success: #16a34a;
+      --error: #ef4444;
+      --radius: 14px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px;
+      background: linear-gradient(180deg, var(--bg), #151d34 70%);
+      color: var(--text);
+      font: 16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    }
+    .wrap { max-width: 560px; margin: 0 auto; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: 0 10px 40px rgba(0,0,0,.25);
+      padding: 18px;
+      margin-bottom: 18px;
+    }
+    h1 {
+      margin: 0 0 10px;
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: 0.2px;
+      color: var(--accent);
+      text-align: center;
+    }
+    p.sub { margin: 0 0 16px; color: var(--muted); text-align: center; font-size: 14px; }
+    label { display: block; font-weight: 600; margin: 12px 0 6px; }
+    input[type="text"], textarea, input[type="password"] {
+      width: 100%;
+      padding: 12px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: #0f1730;
+      color: var(--text);
+      outline: none; transition: border-color .15s ease;
+    }
+    input[type="text"]:focus, textarea:focus, input[type="password"]:focus { border-color: var(--accent); }
+    textarea { min-height: 120px; resize: vertical; }
+    .row { display: flex; gap: 10px; }
+    .row > .col { flex: 1; }
+    button {
+      width: 100%; margin-top: 14px; padding: 12px 14px;
+      border: 0; border-radius: 12px; font-weight: 800; letter-spacing: .3px;
+      background: var(--accent); color: #00121c; cursor: pointer;
+    }
+    .msg { margin-top: 10px; text-align: center; font-weight: 700; min-height: 22px; }
+    .msg.ok { color: var(--success); }
+    .msg.err { color: var(--error); }
+    .footer { margin-top: 14px; text-align: center; color: var(--muted); font-size: 13px; }
+    .count { font-weight: 700; color: var(--text); }
+  </style>
+</head>
+
+<body>
+  <!-- Centered container -->
+  <div class="wrap">
+
+    <!-- ============================
+         PIN Gate (login-like screen)
+         ============================ -->
+    <div class="card" id="login-card">
+      <h1>Enter Event PIN</h1>
+      <p class="sub">Please enter the PIN provided by staff.</p>
+
+      <label for="pin-login">Event PIN</label>
+      <input id="pin-login" type="password" placeholder="••••" />
+
+      <button id="login-btn" type="button">Enter</button>
+      <div id="login-msg" class="msg" aria-live="polite"></div>
+    </div>
+
+    <!-- ============================
+         Idea Form (hidden until PIN accepted)
+         ============================ -->
+    <div class="card" id="form-card" style="display:none;">
+      <h1>Submit an Idea</h1>
+      <p class="sub">Add your idea below.</p>
+
+      <form id="idea-form" autocomplete="off" onsubmit="handleSubmit(event)">
+        <!-- Name input -->
+        <label for="author">Your name</label>
+        <input id="author" name="author" type="text" placeholder="e.g., Jordan" required />
+
+        <!-- Idea text area -->
+        <label for="text">Your idea</label>
+        <textarea id="text" name="text" placeholder="Share your idea" required></textarea>
+
+        <!-- Hidden pin always submitted -->
+        <input id="pin-hidden" name="pin" type="hidden" value="">
+
+        <!-- Submit button -->
+        <button type="submit">Submit</button>
+
+        <!-- Message area -->
+        <div id="msg" class="msg" aria-live="polite"></div>
+      </form>
+
+      <!-- Footer / live count -->
+      <div class="footer">
+        Ideas so far: <span id="count" class="count">—</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Inline script keeps deployment simple -->
+  <script>
+    // ----------------------------
+    // DOM references
+    // ----------------------------
+    const form      = document.getElementById('idea-form');
+    const msgEl     = document.getElementById('msg');
+    const countEl   = document.getElementById('count');
+    const loginCard = document.getElementById('login-card');
+    const formCard  = document.getElementById('form-card');
+    const pinLogin  = document.getElementById('pin-login');
+    const loginBtn  = document.getElementById('login-btn');
+    const loginMsg  = document.getElementById('login-msg');
+
+    // ----------------------------
+    // PIN storage helpers
+    // ----------------------------
+    function savePin(pin) { try { localStorage.setItem('EVENT_PIN', pin); } catch (e) {} }
+    function loadPin()    { try { return localStorage.getItem('EVENT_PIN') || ''; } catch (e) { return ''; } }
+    function clearPin()   { try { localStorage.removeItem('EVENT_PIN'); } catch (e) {} }
+
+    // ----------------------------
+    // Page init: if PIN saved, skip gate and show form
+    // ----------------------------
+    document.addEventListener('DOMContentLoaded', () => {
+      const saved = loadPin();
+      if (saved) {
+        // Hide login, show form, prime hidden pin
+        loginCard.style.display = 'none';
+        formCard.style.display  = '';
+        document.getElementById('pin-hidden').value = saved;
+        refreshCount();
+      }
+    });
+
+    // ----------------------------
+    // Gate: validate presence of PIN (UX only; backend still enforces)
+    // ----------------------------
+    loginBtn.addEventListener('click', () => {
+      const entered = (pinLogin.value || '').trim();
+      if (!entered) {
+        loginMsg.classList.remove('ok'); loginMsg.classList.add('err');
+        loginMsg.textContent = 'Please enter a PIN.';
+        return;
+      }
+      // Save and switch to form
+      savePin(entered);
+      loginCard.style.display = 'none';
+      formCard.style.display  = '';
+      document.getElementById('pin-hidden').value = entered;
+      refreshCount();
+    });
+
+    // ----------------------------
+    // UI helper: show a temporary message
+    // ----------------------------
+    function showMessage(text, ok=true) {
+      msgEl.classList.remove('ok', 'err');
+      msgEl.classList.add(ok ? 'ok' : 'err');
+      msgEl.textContent = text;
+    }
+
+    // ----------------------------
+    // Refresh idea count from /ideas
+    // ----------------------------
+    async function refreshCount() {
+      try {
+        const res = await fetch('/ideas', { cache: 'no-store' });
+        const items = await res.json();
+        countEl.textContent = Array.isArray(items) ? items.length : '—';
+      } catch (_) {
+        // ignore
+      }
+    }
+
+    // ----------------------------
+    // Submit handler (uses saved PIN)
+    // ----------------------------
+    async function handleSubmit(e) {
+      e.preventDefault();
+
+      // Ensure hidden pin is present from localStorage
+      const saved = loadPin();
+      const hidden = document.getElementById('pin-hidden');
+      if (hidden) hidden.value = saved;
+
+      // Build body and POST
+      const body = new FormData(form);
+      try {
+        const res = await fetch('/ideas', { method: 'POST', body });
+        const j = await res.json().catch(() => ({}));
+
+        if (res.ok && j.ok) {
+          showMessage('Idea submitted — thank you!', true);
+          document.getElementById('text').value = '';  // keep name for rapid entries
+          refreshCount();
+          return;
+        }
+
+        if (j && j.error) {
+          showMessage(j.error, false);
+          return;
+        }
+        showMessage(`Submission failed (${res.status}).`, false);
+      } catch (err) {
+        showMessage('Network error. Please try again.', false);
+      }
+    }
+
+    // Optional: Poll the count periodically
+    setInterval(refreshCount, 30000);
+  </script>
+</body>
+</html>
